@@ -211,7 +211,7 @@ int main(int argc, char const **argv) {
   // ground the base part
   if (!clingo_control_ground(ctl, parts, 1, NULL, NULL)) { goto error; }
 
-  // get the program literal coresponding to the external atom
+  // get the program literal corresponding to the external atom
   if (!clingo_control_symbolic_atoms(ctl, &atoms)) { goto error; }
   if (!clingo_symbolic_atoms_find(atoms, sym, &atm_it)) { goto error; }
   if (!clingo_symbolic_atoms_literal(atoms, atm_it, &atm)) { goto error; }
