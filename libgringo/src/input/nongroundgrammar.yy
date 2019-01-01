@@ -316,6 +316,8 @@ void NonGroundGrammar::parser::error(DefaultLocation const &l, std::string const
     VARIABLE   "<VARIABLE>"
     THEORY_OP  "<THEORYOP>"
     NOT        "not"
+    DEFAULT    "default"
+    OVERRIDE   "override"
 
 // {{{2 operator precedence and associativity
 
@@ -355,6 +357,8 @@ statement
 
 identifier
     : IDENTIFIER[a] { $$ = $a; }
+    | DEFAULT[a]    { $$ = $a; }
+    | OVERRIDE[a]   { $$ = $a; }
     ;
 
 // {{{1 terms
@@ -380,6 +384,7 @@ constterm
     | AT[l] identifier[a] LPAREN constargvec[b] RPAREN { $$ = BUILDER.term(@$, String::fromRep($a), $b, true); }
     | VBAR[l] constterm[a] VBAR                        { $$ = BUILDER.term(@$, UnOp::ABS, $a); }
     | identifier[a]                                    { $$ = BUILDER.term(@$, Symbol::createId(String::fromRep($a))); }
+    | AT[l] identifier[a]                              { $$ = BUILDER.term(@$, String::fromRep($a), BUILDER.termvecvec(BUILDER.termvecvec(), BUILDER.termvec()), true); }
     | NUMBER[a]                                        { $$ = BUILDER.term(@$, Symbol::createNum($a)); }
     | STRING[a]                                        { $$ = BUILDER.term(@$, Symbol::createStr(String::fromRep($a))); }
     | INFIMUM[a]                                       { $$ = BUILDER.term(@$, Symbol::createInf()); }
@@ -395,7 +400,7 @@ consttermvec
 
 constargvec
     : consttermvec[a] { $$ = BUILDER.termvecvec(BUILDER.termvecvec(), $a);  }
-    |                 { $$ = BUILDER.termvecvec();  }
+    |                 { $$ = BUILDER.termvecvec(BUILDER.termvecvec(), BUILDER.termvec());  }
     ;
 
 // {{{2 terms including variables
@@ -418,6 +423,7 @@ term
     | AT identifier[a] LPAREN argvec[b] RPAREN { $$ = BUILDER.term(@$, String::fromRep($a), $b, true); }
     | VBAR unaryargvec[a] VBAR                 { $$ = BUILDER.term(@$, UnOp::ABS, $a); }
     | identifier[a]                            { $$ = BUILDER.term(@$, Symbol::createId(String::fromRep($a))); }
+    | AT[l] identifier[a]                      { $$ = BUILDER.term(@$, String::fromRep($a), BUILDER.termvecvec(BUILDER.termvecvec(), BUILDER.termvec()), true); }
     | NUMBER[a]                                { $$ = BUILDER.term(@$, Symbol::createNum($a)); }
     | STRING[a]                                { $$ = BUILDER.term(@$, Symbol::createStr(String::fromRep($a))); }
     | INFIMUM[a]                               { $$ = BUILDER.term(@$, Symbol::createInf()); }
@@ -830,8 +836,10 @@ define
     : identifier[uid] EQ constterm[rhs] {  BUILDER.define(@$, String::fromRep($uid), $rhs, false, LOGGER); }
     ;
 
-statement 
-    : CONST identifier[uid] EQ constterm[rhs] DOT {  BUILDER.define(@$, String::fromRep($uid), $rhs, true, LOGGER); }
+statement
+    : CONST identifier[uid] EQ constterm[rhs] DOT                        { BUILDER.define(@$, String::fromRep($uid), $rhs, true, LOGGER); }
+    | CONST identifier[uid] EQ constterm[rhs] DOT LBRACK DEFAULT  RBRACK { BUILDER.define(@$, String::fromRep($uid), $rhs, true, LOGGER); }
+    | CONST identifier[uid] EQ constterm[rhs] DOT LBRACK OVERRIDE RBRACK { BUILDER.define(@$, String::fromRep($uid), $rhs, false, LOGGER); }
     ;
 
 // {{{2 scripts
@@ -868,9 +876,12 @@ statement
 // {{{2 external
 
 statement
-    : EXTERNAL atom[hd] COLON bodydot[bd] { BUILDER.external(@$, $hd, $bd); }
-    | EXTERNAL atom[hd] COLON DOT         { BUILDER.external(@$, $hd, BUILDER.body()); }
-    | EXTERNAL atom[hd] DOT               { BUILDER.external(@$, $hd, BUILDER.body()); }
+    : EXTERNAL atom[hd] COLON bodydot[bd]                       { BUILDER.external(@$, $hd, $bd, BUILDER.term(@$, Symbol::createId("false"))); }
+    | EXTERNAL atom[hd] COLON DOT                               { BUILDER.external(@$, $hd, BUILDER.body(), BUILDER.term(@$, Symbol::createId("false"))); }
+    | EXTERNAL atom[hd] DOT                                     { BUILDER.external(@$, $hd, BUILDER.body(), BUILDER.term(@$, Symbol::createId("false"))); }
+    | EXTERNAL atom[hd] COLON bodydot[bd] LBRACK term[t] RBRACK { BUILDER.external(@$, $hd, $bd, $t); }
+    | EXTERNAL atom[hd] COLON DOT         LBRACK term[t] RBRACK { BUILDER.external(@$, $hd, BUILDER.body(), $t); }
+    | EXTERNAL atom[hd] DOT               LBRACK term[t] RBRACK { BUILDER.external(@$, $hd, BUILDER.body(), $t); }
     ;
 
 // {{{1 theory

@@ -906,23 +906,9 @@ WRAP_FUNCTION(tp_richcompare) {
         PY_TRY {
             auto self = reinterpret_cast<B*>(pySelf);
             Reference b{pyB};
-            if (!b.isInstance(self->type)) {
-                if      (op == Py_EQ) { Py_RETURN_FALSE; }
-                else if (op == Py_NE) { Py_RETURN_TRUE; }
-                else {
-                    const char *ops = "<";
-                    switch (op) {
-                        case Py_LT: { ops = "<";  break; }
-                        case Py_LE: { ops = "<="; break; }
-                        case Py_EQ: { ops = "=="; break; }
-                        case Py_NE: { ops = "!="; break; }
-                        case Py_GT: { ops = ">";  break; }
-                        case Py_GE: { ops = ">="; break; }
-                    }
-                    return PyErr_Format(PyExc_TypeError, "unorderable types: %s() %s %s()", self->type.tp_name, ops, pyB->ob_type->tp_name);
-                }
-            }
-            return self->tp_richcompare(*reinterpret_cast<B*>(pyB), op).release();
+            return b.isInstance(self->type)
+                ? self->tp_richcompare(*reinterpret_cast<B*>(pyB), op).release()
+                : (Py_INCREF(Py_NotImplemented), Py_NotImplemented);
         }
         PY_CATCH(nullptr);
     };
@@ -1886,8 +1872,8 @@ struct SymbolicAtom : public ObjectBase<SymbolicAtom> {
 PyGetSetDef SymbolicAtom::tp_getset[] = {
     {(char *)"symbol", to_getter<&SymbolicAtom::symbol>(), nullptr, (char *)R"(The representation of the atom in form of a symbol (Symbol object).)", nullptr},
     {(char *)"literal", to_getter<&SymbolicAtom::literal>(), nullptr, (char *)R"(The program literal associated with the atom.)", nullptr},
-    {(char *)"is_fact", to_getter<&SymbolicAtom::is_fact>(), nullptr, (char *)R"(Wheather the atom is a is_fact.)", nullptr},
-    {(char *)"is_external", to_getter<&SymbolicAtom::is_external>(), nullptr, (char *)R"(Wheather the atom is an external atom.)", nullptr},
+    {(char *)"is_fact", to_getter<&SymbolicAtom::is_fact>(), nullptr, (char *)R"(Whether the atom is a is_fact.)", nullptr},
+    {(char *)"is_external", to_getter<&SymbolicAtom::is_external>(), nullptr, (char *)R"(Whether the atom is an external atom.)", nullptr},
     {nullptr, nullptr, nullptr, nullptr, nullptr},
 };
 
@@ -2938,7 +2924,7 @@ PyGetSetDef Assignment::tp_getset[] = {
     {(char *)"decision_level", to_getter<&Assignment::decisionLevel>(), nullptr, (char *)R"(The current decision level.)", nullptr},
     {(char *)"size", to_getter<&Assignment::size>(), nullptr, (char *)R"(The number of assigned literals.)", nullptr},
     {(char *)"max_size", to_getter<&Assignment::max_size>(), nullptr, (char *)R"(The maximum size of the assignment (if all literals are assigned).)", nullptr},
-    {(char *)"is_total", to_getter<&Assignment::isTotal>(), nullptr, (char *)R"(Wheather the assignment is total.)", nullptr},
+    {(char *)"is_total", to_getter<&Assignment::isTotal>(), nullptr, (char *)R"(Whether the assignment is total.)", nullptr},
     {(char *)"_to_c", to_getter<&Assignment::to_c>(), nullptr, (char *)R"(An int representing the pointer to the underlying C clingo_assignment_t struct.)", nullptr},
     {nullptr, nullptr, nullptr, nullptr, nullptr}
 };
@@ -3529,7 +3515,7 @@ format.)";
         ParseTupleAndKeywords(pyargs, pykwds, "O|O", kwlist, pyAtom, pyValue);
         clingo_atom_t atom;
         pyToCpp(pyAtom, atom);
-        clingo_external_type_t value = pyValue.valid() ? enumValue<TruthValue>(pyValue) : clingo_external_type_false;;
+        clingo_external_type_t value = pyValue.valid() ? enumValue<TruthValue>(pyValue) : clingo_external_type_false;
         handle_c_error(clingo_backend_external(backend, atom, value));
         Py_RETURN_NONE;
     }
@@ -4240,7 +4226,7 @@ provided in this module.
             case ASTType::Minimize:                  { return ret({ "weight", "priority", "tuple", "body" }); }
             case ASTType::Script:                    { return ret({ }); }
             case ASTType::Program:                   { return ret({ "parameters" }); }
-            case ASTType::External:                  { return ret({ "atom", "body" }); }
+            case ASTType::External:                  { return ret({ "atom", "body", "external_type" }); }
             case ASTType::Edge:                      { return ret({ "u", "v", "body" }); }
             case ASTType::Heuristic:                 { return ret({ "atom", "body", "bias", "priority", "modifier" }); }
             case ASTType::ProjectAtom:               { return ret({ "atom", "body" }); }
@@ -4481,7 +4467,7 @@ provided in this module.
             }
             case ASTType::Definition: {
                 out << "#const " << fields_.getItem("name") << " = " << fields_.getItem("value") << ".";
-                if (fields_.getItem("is_default").isTrue()) { out << " [default]"; }
+                if (!fields_.getItem("is_default").isTrue()) { out << " [override]"; }
                 break;
             }
             case ASTType::ShowSignature: {
@@ -4513,7 +4499,7 @@ provided in this module.
                 break;
             }
             case ASTType::External: {
-                out << "#external " << fields_.getItem("atom") << printBody(fields_.getItem("body"));
+                out << "#external " << fields_.getItem("atom") << printBody(fields_.getItem("body")) << " [" << fields_.getItem("external_type") << "]";
                 break;
             }
             case ASTType::Edge: {
@@ -4656,7 +4642,7 @@ CREATE4(ShowTerm, location, term, body, csp)
 CREATE5(Minimize, location, weight, priority, tuple, body)
 CREATE3(Script, location, script_type, code)
 CREATE3(Program, location, name, parameters)
-CREATE3(External, location, atom, body)
+CREATE4(External, location, atom, body, external_type)
 CREATE4(Edge, location, u, v, body)
 CREATE6(Heuristic, location, atom, body, bias, priority, modifier)
 CREATE3(ProjectAtom, location, atom, body)
@@ -4967,7 +4953,7 @@ Object cppToPy(clingo_ast_statement_t const &stm) {
             return call(createProgram, cppToPy(stm.location), cppToPy(stm.program->name), cppToPy(stm.program->parameters, stm.program->size));
         }
         case clingo_ast_statement_type_external: {
-            return call(createExternal, cppToPy(stm.location), call(createSymbolicAtom, cppToPy(stm.external->atom)), cppToPy(stm.external->body, stm.external->size));
+            return call(createExternal, cppToPy(stm.location), call(createSymbolicAtom, cppToPy(stm.external->atom)), cppToPy(stm.external->body, stm.external->size), cppToPy(stm.external->type));
         }
         case clingo_ast_statement_type_edge: {
             return call(createEdge, cppToPy(stm.location), cppToPy(stm.edge->u), cppToPy(stm.edge->v), cppToPy(stm.edge->body, stm.edge->size));
@@ -5587,6 +5573,7 @@ struct ASTToC {
                 external->atom = convSymbolicAtom(x.getAttr("atom"));
                 external->body = convBodyLiteralVec(body);
                 external->size = body.size();
+                external->type = convTerm(x.getAttr("external_type"));
                 ret.type     = clingo_ast_statement_type_external;
                 ret.external = external;
                 return ret;
@@ -5856,6 +5843,7 @@ struct StatisticsArray : ObjectBase<StatisticsArray> {
     clingo_statistics_t *stats;
     uint64_t key;
 
+    static PyGetSetDef tp_getset[];
     static PyMethodDef tp_methods[];
 
     static constexpr char const *tp_type = "StatisticsArray";
@@ -5914,6 +5902,9 @@ statistics array.
         }
         return None();
     }
+    Object to_c() {
+        return PyLong_FromVoidPtr(stats);
+    }
 };
 
 PyMethodDef StatisticsArray::tp_methods[] = {
@@ -5948,10 +5939,16 @@ can be used to update an existing value, it receives the previous numeric value
     {nullptr, nullptr, 0, nullptr}
 };
 
+PyGetSetDef StatisticsArray::tp_getset[] = {
+    {(char *)"_to_c", to_getter<&StatisticsArray::to_c>(), nullptr, (char *)"An int representing the pointer to the underlying C clingo_statistics_t struct.", nullptr},
+    {nullptr, nullptr, nullptr, nullptr, nullptr}
+};
+
 struct StatisticsMap : ObjectBase<StatisticsMap> {
     clingo_statistics_t *stats;
     uint64_t key;
 
+    static PyGetSetDef tp_getset[];
     static PyMethodDef tp_methods[];
 
     static constexpr char const *tp_type = "StatisticsMap";
@@ -6034,6 +6031,9 @@ struct StatisticsMap : ObjectBase<StatisticsMap> {
         }
         return ret;
     }
+    Object to_c() {
+        return PyLong_FromVoidPtr(stats);
+    }
 
 };
 
@@ -6066,6 +6066,11 @@ The statistics argument must be a map. Otherwise, it is equivalent to
 StatisticsArray.update().
 )"},
     {nullptr, nullptr, 0, nullptr}
+};
+
+PyGetSetDef StatisticsMap::tp_getset[] = {
+    {(char *)"_to_c", to_getter<&StatisticsMap::to_c>(), nullptr, (char *)"An int representing the pointer to the underlying C clingo_statistics_t struct.", nullptr},
+    {nullptr, nullptr, nullptr, nullptr, nullptr}
 };
 
 void setUserStatistics(clingo_statistics_t *stats, uint64_t key, clingo_statistics_type_t type, Reference value, bool update) {
@@ -6302,22 +6307,23 @@ active; you must not call any member function during search.)";
         CHECK_BLOCKED("solve");
         Py_XDECREF(stats);
         stats = nullptr;
-        static char const *kwlist[] = {"assumptions", "on_model", "on_statistics", "on_finish", "yield_", "async", nullptr};
-        Reference pyAss = Py_None, pyM = Py_None, pyS = Py_None, pyF = Py_None, pyYield = Py_False, pyAsync = Py_False;
-        ParseTupleAndKeywords(args, kwds, "|OOOOOO", kwlist, pyAss, pyM, pyS, pyF, pyYield, pyAsync);
+        static char const *kwlist[] = {"assumptions", "on_model", "on_statistics", "on_finish", "yield_", "async", "async_", nullptr};
+        Reference pyAss = Py_None, pyM = Py_None, pyS = Py_None, pyF = Py_None, pyYield = Py_False, pyAsync = Py_False, pyAsync_ = Py_False;
+        ParseTupleAndKeywords(args, kwds, "|OOOOOOO", kwlist, pyAss, pyM, pyS, pyF, pyYield, pyAsync, pyAsync_);
         std::vector<clingo_literal_t> ass;
         if (!pyAss.is_none()) {
             clingo_symbolic_atoms_t *atoms;
             handle_c_error(clingo_control_symbolic_atoms(ctl, &atoms));
             ass = pyToLits(pyAss, atoms, false, false);
         }
+        bool async = pyAsync.isTrue() || pyAsync_.isTrue();
         clingo_solve_mode_bitset_t mode = 0;
         if (pyYield.isTrue()) { mode |= clingo_solve_mode_yield; }
-        if (pyAsync.isTrue()) { mode |= clingo_solve_mode_async; }
+        if (async) { mode |= clingo_solve_mode_async; }
         auto handle = SolveHandle::construct();
         auto notify = handle->notify(&SolveHandle::on_event, pyM, pyS, pyF);
         doUnblocked([&](){ handle_c_error(clingo_control_solve(ctl, mode, ass.data(), ass.size(), notify, handle.obj, &handle->handle)); });
-        if (!pyYield.isTrue() && !pyAsync.isTrue()) { return handle->get(); }
+        if (!pyYield.isTrue() && !async) { return handle->get(); }
         else { return handle; }
     }
     Object cleanup() {
@@ -6551,13 +6557,15 @@ Arguments:
 path -- path to program)"},
     // solve
     {"solve", to_function<&ControlWrap::solve>(), METH_KEYWORDS | METH_VARARGS,
-R"(solve(self, assumptions, on_model, on_finish, yield_, async) -> SolveHandle|SolveResult
+R"(solve(self, assumptions, on_model, on_finish, yield_, async_) -> SolveHandle|SolveResult
 
 Starts a search.
 
 Keyword Arguments:
 on_model      -- Optional callback for intercepting models.
                  A Model object is passed to the callback.
+                 The search can be interruped from the model callback by
+                 returning False.
                  (Default: None)
 on_statistics -- Optional callback to update statistics.
                  The step and accumulated statistics are passed as arguments.
@@ -6573,10 +6581,10 @@ assumptions   -- List of (atom, boolean) tuples or program literals that serve
                  (Default: [])
 yield_        -- The resulting SolveHandle is iterable yielding Model objects.
                  (Default: False)
-async         -- The solve call and SolveHandle.resume() are non-blocking.
+async_        -- The solve call and SolveHandle.resume() are non-blocking.
                  (Default: False)
 
-If neither yield_ nor async is set, the function returns a SolveResult right
+If neither yield_ nor async_ is set, the function returns a SolveResult right
 away.
 
 Note that in gringo or in clingo with lparse or text output enabled this
@@ -6635,7 +6643,7 @@ def on_finish(res, canceled):
 def main(prg):
     prg.add("p", [], "{a;b;c}.")
     prg.ground([("base", [])])
-    with prg.solve(on_model=on_model, on_finish=on_finish, async=True) as handle:
+    with prg.solve(on_model=on_model, on_finish=on_finish, async_=True) as handle:
         while not handle.wait(0):
             # do something asynchronously
         print(handle.get())
@@ -7107,7 +7115,7 @@ struct ApplicationOptions : ObjectBase<ApplicationOptions> {
     }
 
     Object to_c() {
-        return cppToPy(options);
+        return PyLong_FromVoidPtr(options);
     }
 };
 
@@ -7389,7 +7397,7 @@ R"(
 
 
 The grammar below defines valid ASTs. For each upper case identifier there is a
-matching function in the module. Arguments follow in paranthesis: each having a
+matching function in the module. Arguments follow in parenthesis: each having a
 type given on the right-hand side of the colon. The symbols ?, *, and + are
 used to denote optional arguments (None encodes abscence), list arguments, and
 non-empty list arguments.
@@ -7660,6 +7668,7 @@ statement = Rule
              ( location : Location
              , atom     : symbolic_atom
              , body     : body_literal*
+             , type     : term
              )
           | Edge
              ( location : Location

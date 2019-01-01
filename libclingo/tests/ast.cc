@@ -92,7 +92,9 @@ TEST_CASE("parse-ast", "[clingo]") {
     SECTION("statement") {
         REQUIRE(parse("a.") == "a.");
         REQUIRE(parse("a:-b.") == "a :- b.");
-        REQUIRE(parse("#const a=10.") == "#const a = 10. [default]");
+        REQUIRE(parse("#const a=10. [override]") == "#const a = 10. [override]");
+        REQUIRE(parse("#const a=10. [default]") == "#const a = 10.");
+        REQUIRE(parse("#const a=10.") == "#const a = 10.");
         REQUIRE(parse("#show a/1.") == "#show a/1.");
         REQUIRE(parse("#show $a/1.") == "#show $a/1.");
         REQUIRE(parse("#show a : b.") == "#show a : b.");
@@ -101,8 +103,9 @@ TEST_CASE("parse-ast", "[clingo]") {
         REQUIRE(parse("#minimize{ 1:b }.") == ":~ b. [1@0]");
         REQUIRE(parse("#script (python) 42 #end.") == "#script (python) 42 #end.");
         REQUIRE(parse("#program p(k).") == "#program p(k).");
-        REQUIRE(parse("#external p(k).") == "#external p(k).");
-        REQUIRE(parse("#external p(k) : a, b.") == "#external p(k) : a; b.");
+        REQUIRE(parse("#external p(k).") == "#external p(k). [false]");
+        REQUIRE(parse("#external p(k). [true]") == "#external p(k). [true]");
+        REQUIRE(parse("#external p(k) : a, b.") == "#external p(k) : a; b. [false]");
         REQUIRE(parse("#edge (u,v) : a, b.") == "#edge (u,v) : a; b.");
         REQUIRE(parse("#heuristic a : b, c. [L@P,level]") == "#heuristic a : b; c. [L@P,level]");
         REQUIRE(parse("#project a : b.") == "#project a : b.");

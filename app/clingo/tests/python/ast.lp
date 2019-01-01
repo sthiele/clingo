@@ -58,7 +58,7 @@ def test():
     stm_m = ast.Minimize(loc, trm_s, trm_s, [trm_v], [lit_s])
     stm_p = ast.Script(loc, ast.ScriptType.Python, "blub!")
     stm_q = ast.Program(loc, "p", [id_i])
-    stm_e = ast.External(loc, trm_s, [lit_s])
+    stm_e = ast.External(loc, trm_s, [lit_s], ast.Function(loc, "false", [], False))
     stm_a = ast.Edge(loc, trm_s, trm_s, [lit_s])
     stm_h = ast.Heuristic(loc, trm_s, [lit_s], trm_s, trm_s, trm_s)
     stm_x = ast.ProjectAtom(loc, trm_s, [lit_s])
@@ -103,14 +103,14 @@ def test():
         (thd_a, "&p/2 : t, { >, < }, t, any", ast.ASTType.TheoryAtomDefinition),
         (thd_d, "#theory x {\n  t {\n    - : 7, unary\n  };\n  &p/2 : t, { >, < }, t, any\n}.", ast.ASTType.TheoryDefinition),
         (stm_r, "not p(2) :- not p(2); q(2).", ast.ASTType.Rule),
-        (stm_c, "#const x = 2. [default]", ast.ASTType.Definition),
+        (stm_c, "#const x = 2.", ast.ASTType.Definition),
         (stm_s, "#show $x/2.", ast.ASTType.ShowSignature),
         (stm_i, "#defined i/2.", ast.ASTType.Defined),
         (stm_t, "#show $2 : not p(2).", ast.ASTType.ShowTerm),
         (stm_m, ":~ not p(2). [2@2,X]", ast.ASTType.Minimize),
         (stm_p, "blub!", ast.ASTType.Script),
         (stm_q, "#program p(i).", ast.ASTType.Program),
-        (stm_e, "#external 2 : not p(2).", ast.ASTType.External),
+        (stm_e, "#external 2 : not p(2). [false]", ast.ASTType.External),
         (stm_a, "#edge (2,2) : not p(2).", ast.ASTType.Edge),
         (stm_h, "#heuristic 2 : not p(2). [2@2,2]", ast.ASTType.Heuristic),
         (stm_x, "#project 2 : not p(2).", ast.ASTType.ProjectAtom),

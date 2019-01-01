@@ -195,21 +195,26 @@ public:
     Optional &operator=(T const &x) {
         clear();
         data_.reset(new T(x));
+        return *this;
     }
     Optional &operator=(T &x) {
         clear();
         data_.reset(new T(x));
+        return *this;
     }
     Optional &operator=(T &&x) {
         clear();
         data_.reset(new T(std::move(x)));
+        return *this;
     }
     Optional &operator=(Optional &&opt) noexcept {
         data_ = std::move(opt.data_);
+        return *this;
     }
     Optional &operator=(Optional const &opt) {
         clear();
         data_.reset(opt ? new T(*opt.get()) : nullptr);
+        return *this;
     }
     T *get() { return data_.get(); }
     T const *get() const { return data_.get(); }
@@ -1699,6 +1704,7 @@ std::ostream &operator<<(std::ostream &out, Program const &x);
 struct External {
     Term atom;
     std::vector<BodyLiteral> body;
+    Term type;
 };
 std::ostream &operator<<(std::ostream &out, External const &x);
 
@@ -1866,7 +1872,7 @@ class StatisticsBase {
 public:
     using statistics_t = typename std::conditional<constant, clingo_statistics_t const *, clingo_statistics_t*>::type;
     using KeyIteratorT = KeyIterator<StatisticsBase>;
-    using ArrayIteratorT = ArrayIterator<StatisticsBase, StatisticsBase const *>;;
+    using ArrayIteratorT = ArrayIterator<StatisticsBase, StatisticsBase const *>;
     using KeyRangeT = IteratorRange<KeyIteratorT>;
     explicit StatisticsBase(statistics_t stats, uint64_t key)
     : stats_(stats)
@@ -3678,6 +3684,7 @@ struct ASTToC {
         external->atom = convTerm(x.atom);
         external->body = convBodyLiteralVec(x.body);
         external->size = x.body.size();
+        external->type = convTerm(x.type);
         clingo_ast_statement_t ret;
         ret.type     = clingo_ast_statement_type_external;
         ret.external = external;
@@ -3868,7 +3875,7 @@ inline void Control::ground(PartSpan parts, GroundCallback cb) {
                             if (!cb(reinterpret_cast<clingo_symbol_t const *>(symret.begin()), symret.size(), cbdata)) { throw Ret(); }
                         });
                     }
-                    catch (Ret e) { return false; }
+                    catch (Ret const &e) { return false; }
                 }
             }
             CLINGO_CALLBACK_CATCH(d.second);
@@ -4709,7 +4716,7 @@ inline void convStatement(clingo_ast_statement_t const *stm, StatementCallback &
             break;
         }
         case clingo_ast_statement_type_external: {
-            cb({Location(stm->location), External{convTerm(stm->external->atom), convBodyLiteralVec(stm->external->body, stm->external->size)}});
+            cb({Location(stm->location), External{convTerm(stm->external->atom), convBodyLiteralVec(stm->external->body, stm->external->size), convTerm(stm->external->type)}});
             break;
         }
         case clingo_ast_statement_type_edge: {
@@ -4989,7 +4996,7 @@ inline std::ostream &operator<<(std::ostream &out, Rule const &x) {
 
 inline std::ostream &operator<<(std::ostream &out, Definition const &x) {
     out << "#const " << x.name << " = " << x.value << ".";
-    if (x.is_default) { out << " [default]"; }
+    if (!x.is_default) { out << " [override]"; }
     return out;
 }
 
@@ -5028,7 +5035,7 @@ inline std::ostream &operator<<(std::ostream &out, Program const &x) {
 }
 
 inline std::ostream &operator<<(std::ostream &out, External const &x) {
-    out << "#external " << x.atom << Detail::print_body(x.body);
+    out << "#external " << x.atom << Detail::print_body(x.body) << " [" << x.type << "]";
     return out;
 }
 

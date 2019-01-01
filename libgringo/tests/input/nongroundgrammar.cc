@@ -128,7 +128,7 @@ public:
     virtual void python(Location const &loc, String code) override;
     virtual void lua(Location const &loc, String code) override;
     virtual void block(Location const &loc, String name, IdVecUid args) override;
-    virtual void external(Location const &loc, TermUid head, BdLitVecUid body) override;
+    virtual void external(Location const &loc, TermUid head, BdLitVecUid body, TermUid type) override;
     virtual void edge(Location const &loc, TermVecVecUid edges, BdLitVecUid body) override;
     virtual void heuristic(Location const &loc, TermUid termUid, BdLitVecUid body, TermUid a, TermUid b, TermUid mod) override;
     virtual void project(Location const &loc, TermUid termUid, BdLitVecUid body) override;
@@ -598,8 +598,9 @@ void TestNongroundProgramBuilder::rule(Location const &, HdLitUid head, BdLitVec
     statements_.emplace_back(str());
 }
 
-void TestNongroundProgramBuilder::define(Location const &, String name, TermUid value, bool, Logger &) {
+void TestNongroundProgramBuilder::define(Location const &, String name, TermUid value, bool def, Logger &) {
     current_ << "#const " << name << "=" << terms_.erase(value) << ".";
+    if (!def) { current_ << " [override]"; }
     statements_.emplace_back(str());
 }
 
@@ -654,14 +655,14 @@ void TestNongroundProgramBuilder::block(Location const &, String name, IdVecUid 
     statements_.emplace_back(str());
 }
 
-void TestNongroundProgramBuilder::external(Location const &, TermUid head, BdLitVecUid bodyuid) {
+void TestNongroundProgramBuilder::external(Location const &, TermUid head, BdLitVecUid bodyuid, TermUid type) {
     current_ << "#external " << terms_.erase(head);
     StringVec body(bodies_.erase(bodyuid));
     if (!body.empty()) {
         current_ << ":";
         print(body, ";");
     }
-    current_ << ".";
+    current_ << ". [" << terms_.erase(type) << "]";
     statements_.emplace_back(str());
 }
 
@@ -967,6 +968,7 @@ TEST_CASE("input-nongroundprogrambuilder", "[input]") {
         REQUIRE("#program base().\np(|1;2;3|)." == parse("p(|1;2;3|)."));
         // lua function calls
         REQUIRE("#program base().\np(@f())." == parse("p(@f())."));
+        REQUIRE("#program base().\np(@f())." == parse("p(@f)."));
         REQUIRE("#program base().\np(@f(1))." == parse("p(@f(1))."));
         REQUIRE("#program base().\np(@f(1,2))." == parse("p(@f(1,2))."));
         REQUIRE("#program base().\np(@f(1,2,3))." == parse("p(@f(1,2,3))."));
@@ -1161,6 +1163,11 @@ TEST_CASE("input-nongroundprogrambuilder", "[input]") {
         REQUIRE("#program base().\nb:d,e;c:;a:x,y." == parse("a:x,y;b:d,e;c."));
     }
 
+    SECTION("external") {
+        REQUIRE("#program base().\n#external p(X):q(X). [false]" == parse("#external p(X) : q(X)."));
+        REQUIRE("#program base().\n#external p(X):q(X). [X]" == parse("#external p(X) : q(X). [X]"));
+    }
+
     SECTION("rule") {
         // body literal
         REQUIRE("#program base().\n#false:-a;x." == parse(":-a,x."));
@@ -1195,6 +1202,47 @@ TEST_CASE("input-nongroundprogrambuilder", "[input]") {
 
     SECTION("define") {
         REQUIRE("#program base().\n#const a=10." == parse("#const a=10."));
+        REQUIRE("#program base().\n#const a=x." == parse("#const a=x."));
+        REQUIRE("#program base().\n#const a=1." == parse("#const a=1."));
+        REQUIRE("#program base().\n#const a=\"1\"." == parse("#const a=\"1\"."));
+        REQUIRE("#program base().\n#const a=#inf." == parse("#const a=#inf."));
+        REQUIRE("#program base().\n#const a=#sup." == parse("#const a=#sup."));
+        // absolute
+        REQUIRE("#program base().\n#const a=|1|." == parse("#const a=|1|."));
+        // lua function calls
+        REQUIRE("#program base().\n#const a=@f()." == parse("#const a=@f()."));
+        REQUIRE("#program base().\n#const a=@f()." == parse("#const a=@f."));
+        REQUIRE("#program base().\n#const a=@f(1)." == parse("#const a=@f(1)."));
+        REQUIRE("#program base().\n#const a=@f(1,2)." == parse("#const a=@f(1,2)."));
+        REQUIRE("#program base().\n#const a=@f(1,2,3)." == parse("#const a=@f(1,2,3)."));
+        // function symbols
+        REQUIRE("#program base().\n#const a=f." == parse("#const a=f()."));
+        REQUIRE("#program base().\n#const a=f(1)." == parse("#const a=f(1)."));
+        REQUIRE("#program base().\n#const a=f(1,2)." == parse("#const a=f(1,2)."));
+        REQUIRE("#program base().\n#const a=f(1,2,3)." == parse("#const a=f(1,2,3)."));
+        // tuples / parenthesis
+        REQUIRE("#program base().\n#const a=()." == parse("#const a=()."));
+        REQUIRE("#program base().\n#const a=(1)." == parse("#const a=(1)."));
+        REQUIRE("#program base().\n#const a=(1,2)." == parse("#const a=(1,2)."));
+        REQUIRE("#program base().\n#const a=(1,2,3)." == parse("#const a=(1,2,3)."));
+        // unary operations
+        REQUIRE("#program base().\n#const a=-1." == parse("#const a=-1."));
+        REQUIRE("#program base().\n#const a=~1." == parse("#const a=~1."));
+        // binary operations
+        REQUIRE("#program base().\n#const a=(1**2)." == parse("#const a=1**2."));
+        REQUIRE("#program base().\n#const a=(1\\2)." == parse("#const a=1\\2."));
+        REQUIRE("#program base().\n#const a=(1/2)." == parse("#const a=1/2."));
+        REQUIRE("#program base().\n#const a=(1*2)." == parse("#const a=1*2."));
+        REQUIRE("#program base().\n#const a=(1-2)." == parse("#const a=1-2."));
+        REQUIRE("#program base().\n#const a=(1+2)." == parse("#const a=1+2."));
+        REQUIRE("#program base().\n#const a=(1&2)." == parse("#const a=1&2."));
+        REQUIRE("#program base().\n#const a=(1?2)." == parse("#const a=1?2."));
+        REQUIRE("#program base().\n#const a=(1^2)." == parse("#const a=1^2."));
+        // precedence
+        REQUIRE("#program base().\n#const a=((1+2)+((3*4)*(5**(6**7))))." == parse("#const a=1+2+3*4*5**6**7."));
+        // attributes
+        REQUIRE("#program base().\n#const a=10." == parse("#const a=10. [default]"));
+        REQUIRE("#program base().\n#const a=10. [override]" == parse("#const a=10. [override]"));
     }
 
     SECTION("optimize") {
